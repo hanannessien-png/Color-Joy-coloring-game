@@ -1,0 +1,24 @@
+kind = "mobile"
+previewPath = "/"
+title = "Color Joy"
+description = "Color Joy is a casual coloring game for Android for all ages. Players color original SVG line-art pictures with tap-to-fill, paint-by-number, and a free brush, using gradients, glitter, undo/redo and zoom. Progress is saved on the device; it also has timed, daily and weekly challenges, coins, achievements and AdMob ads."
+version = "1.0.0"
+id = "artifacts/color-joy"
+router = "expo-domain"
+
+[[services]]
+name = "expo"
+ensurePreviewReachable = "/status"
+paths = [ "/" ]
+localPort = 22093
+
+[services.development]
+run = "pnpm --filter @workspace/color-joy run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/color-joy", "run", "build" ]
+run = [ "pnpm", "--filter", "@workspace/color-joy", "run", "serve" ]
+
+[services.env]
+PORT = "22093"
+BASE_PATH = "/"
