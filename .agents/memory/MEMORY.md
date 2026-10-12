@@ -1,0 +1,1 @@
+- [Color Joy decisions](color-joy-decisions.md) — confirmed scope: Android-only, age gate for ads, free brush, 20% locked images, web-preview testing, milestone stops
