@@ -32,3 +32,11 @@ Added by the user after milestone 1 (2026-10-12):
 - Wrong color in a level never fills; it counts a mistake. Stars: 0 mistakes=3, ≤3=2, else 1 (hints count double). Coins = 10/star, replay pays only the improvement.
 - The reference ("how it should look") picture must always be reachable — user explicitly asked for it.
   **Why:** the user said the earlier build "isn't a complete game" and wanted to see the target colors.
+
+## AdMob (user supplied their real IDs, 2026-10-12)
+- The real unit IDs are used only in release builds; dev builds always use Google TestIds. All caps live in one ads config file.
+- Caps: app-open at most every 4 min and never during the first-ever session; interstitial every 3 finished pictures with at least 2 min between them, shown only when leaving the completion card; rewarded max 10/day ("x2 coins" on the level card); banners only on the levels map and gallery, never in the editor.
+- The SDK is required lazily: none on web, none in Expo Go. Preview rewarded grants the reward directly so the flow can be tested.
+- The neutral age gate is a full-screen overlay. Ages 13 and under (year-based, conservative) get child-directed, under-age-of-consent, G-rated, non-personalized ads with no UMP. Adults get UMP gatherConsent, then PG.
+- Storage, SYSTEM_ALERT_WINDOW and other unused permissions are blocked in app.json (Families policy).
+  **Why:** a kids-oriented app on Google Play Families; the user tests only in the web preview.

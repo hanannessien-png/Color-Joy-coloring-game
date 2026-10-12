@@ -13,6 +13,12 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { useColors } from '@/hooks/useColors';
+import {
+  maybeShowInterstitial,
+  noteCompletion,
+  showRewarded,
+  useAdStatus,
+} from '@/src/ads/adManager';
 import { fonts } from '@/constants/fonts';
 import { ArtSvg, regionIdAtPoint, TargetArt } from '@/src/components/ArtSvg';
 import { CompletionOverlay } from '@/src/components/CompletionOverlay';
@@ -105,6 +111,15 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
   };
   const [activeNumber, setActiveNumber] = useState<number>(firstOpen);
 
+  // If the selected color is already finished (e.g. saved progress loaded
+  // after the screen opened), jump to the first color that still has work.
+  useEffect(() => {
+    if (!isLevel || (numberProgress[activeNumber] ?? 0) < 1) return;
+    const open = image.palette.findIndex((_, i) => (numberProgress[i + 1] ?? 0) < 1);
+    if (open !== -1) setActiveNumber(open + 1);
+  }, [isLevel, numberProgress, activeNumber, image]);
+  const rewardedReady = useAdStatus((s) => s.rewardedReady);
+
   useEffect(() => {
     useHistoryStore.getState().begin(artKey);
   }, [artKey]);
@@ -117,6 +132,7 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     const now = useArtStore.getState().fills[artKey];
     if (!now || Object.keys(now).length < total) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    noteCompletion();
     if (isLevel) {
       const run = useGameStore.getState().runs[image.id] ?? { mistakes: 0, hints: 0 };
       const stars = starsFor(run.mistakes, run.hints);
@@ -159,15 +175,17 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
         return;
       }
       const color = usePaletteStore.getState().color;
+      const before = Object.keys(useArtStore.getState().fills[artKey] ?? {}).length;
       const changed = useHistoryStore
         .getState()
         .commit(artKey, [{ id: regionId, next: { kind: 'solid', color } }]);
       if (!changed) return;
       usePaletteStore.getState().markUsed(color);
       Haptics.selectionAsync().catch(() => {});
-      finishIfComplete();
+      // Celebrate only the tap that completes the picture, not later recolors.
+      if (before < total) finishIfComplete();
     },
-    [isLevel, regionById, artKey, activeNumber, image, shake, finishIfComplete],
+    [isLevel, regionById, artKey, activeNumber, image, shake, finishIfComplete, total],
   );
 
   const onWebTap = useCallback(
@@ -192,7 +210,21 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
   const goBack = () => (router.canGoBack() ? router.back() : router.replace(isLevel ? '/levels' : '/'));
   const nextLevel = LEVELS[levelIndex + 1];
 
+  // Leaving the completion card is a natural break for an interstitial.
+  const leaveAfterFinish = () => {
+    maybeShowInterstitial();
+    goBack();
+  };
+
+  const doubleCoins = async () => {
+    const coins = result?.coins ?? 0;
+    const ok = await showRewarded();
+    if (ok && coins > 0) useGameStore.getState().addCoins(coins);
+    return ok;
+  };
+
   const goNextLevel = () => {
+    maybeShowInterstitial();
     if (!nextLevel) return goBack();
     if (useGameStore.getState().stars[nextLevel.id]) {
       useArtStore.getState().clear(levelArtKey(nextLevel.id));
@@ -288,7 +320,7 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
           {isLevel ? (
             <View
               testID="mistakes"
-              style={[styles.badge, { backgroundColor: mistakes ? '#FFE3E3' : c.paper, borderColor: c.ink }]}
+              style={[styles.badge, { backgroundColor: mistakes ? c.errorSoft : c.paper, borderColor: c.ink }]}
             >
               <MaterialCommunityIcons name="close-thick" size={14} color={mistakes ? c.destructive : c.mutedForeground} />
               <Text style={[styles.badgeText, { color: c.ink }]}>{mistakes}</Text>
@@ -348,19 +380,23 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
         isLevel ? (
           <CompletionOverlay
             image={image}
+            artKey={artKey}
+            onDoubleCoins={doubleCoins}
+            doubleReady={rewardedReady}
             stars={result.stars}
             coinsEarned={result.coins}
             mistakes={result.mistakes}
             primaryLabel={nextLevel ? 'Next level' : 'Back to levels'}
             onPrimary={goNextLevel}
             secondaryLabel="Levels map"
-            onSecondary={goBack}
+            onSecondary={leaveAfterFinish}
           />
         ) : (
           <CompletionOverlay
             image={image}
+            artKey={artKey}
             primaryLabel="Pick another picture"
-            onPrimary={goBack}
+            onPrimary={leaveAfterFinish}
             secondaryLabel="Keep coloring"
             onSecondary={() => setResult(null)}
           />

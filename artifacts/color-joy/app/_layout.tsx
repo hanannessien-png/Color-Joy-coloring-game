@@ -16,6 +16,7 @@ import * as SplashScreen from 'expo-splash-screen';
 import { StatusBar } from 'expo-status-bar';
 
 import colors from '@/constants/colors';
+import { AdsBootstrap } from '@/src/ads/AdsBootstrap';
 
 // Prevent the splash screen from auto-hiding before asset loading is complete.
 SplashScreen.preventAutoHideAsync();
@@ -62,6 +63,7 @@ export default function RootLayout() {
             <KeyboardProvider>
               <StatusBar style="dark" />
               <RootLayoutNav />
+              <AdsBootstrap />
             </KeyboardProvider>
           </GestureHandlerRootView>
         </QueryClientProvider>

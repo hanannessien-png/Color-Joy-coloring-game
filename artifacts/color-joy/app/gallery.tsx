@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { fonts } from '@/constants/fonts';
 import { CategoryTabs, type CategoryFilter } from '@/src/components/CategoryTabs';
+import { AdBanner } from '@/src/ads/AdBanner';
 import { CoinChip } from '@/src/components/CoinChip';
 import { IconButton } from '@/src/components/IconButton';
 import { ImageCard } from '@/src/components/ImageCard';
@@ -84,6 +85,7 @@ export default function GalleryScreen() {
         }
         renderItem={({ item }) => <ImageCard image={item} width={cardWidth} />}
       />
+      <AdBanner />
     </View>
   );
 }

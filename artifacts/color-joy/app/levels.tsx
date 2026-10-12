@@ -23,6 +23,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { fonts } from '@/constants/fonts';
 import { TargetArt } from '@/src/components/ArtSvg';
+import { AdBanner } from '@/src/ads/AdBanner';
 import { CoinChip } from '@/src/components/CoinChip';
 import { IconButton } from '@/src/components/IconButton';
 import { CATEGORY_BY_ID } from '@/src/data/categories';
@@ -226,6 +227,7 @@ export default function LevelsScreen() {
           <Text style={[styles.moreText, { color: c.mutedForeground }]}>More levels coming soon</Text>
         </View>
       </ScrollView>
+      <AdBanner />
     </View>
   );
 }

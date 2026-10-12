@@ -47,6 +47,13 @@ const colors = {
     highlight: '#D9D2EA',
     /** Number labels on unfilled regions. */
     label: '#6E6880',
+    /** Soft background for the mistakes badge once a mistake happened. */
+    errorSoft: '#FFE3E3',
+    /** Floating paint blobs on the title screen. */
+    blobPink: '#FFD3E0',
+    blobMint: '#CFF5EE',
+    blobSun: '#FFEAB0',
+    blobLilac: '#E1DBFF',
   },
 
   radius: 20,

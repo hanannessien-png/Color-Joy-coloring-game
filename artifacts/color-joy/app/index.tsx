@@ -146,10 +146,10 @@ export default function TitleScreen() {
 
   return (
     <View style={[styles.root, { backgroundColor: c.background }]}>
-      <Blob color="#FFD3E0" size={170} top={-40} left={-60} delay={0} />
-      <Blob color="#CFF5EE" size={130} top={height * 0.3} left={width - 80} delay={400} />
-      <Blob color="#FFEAB0" size={110} top={height * 0.62} left={-40} delay={800} />
-      <Blob color="#E1DBFF" size={90} top={90} left={width - 120} delay={1200} />
+      <Blob color={c.blobPink} size={170} top={-40} left={-60} delay={0} />
+      <Blob color={c.blobMint} size={130} top={height * 0.3} left={width - 80} delay={400} />
+      <Blob color={c.blobSun} size={110} top={height * 0.62} left={-40} delay={800} />
+      <Blob color={c.blobLilac} size={90} top={90} left={width - 120} delay={1200} />
 
       <View style={[styles.content, { paddingTop: topPad + 6, paddingBottom: bottomPad + 18, width: w }]}>
         <View style={styles.topRow}>

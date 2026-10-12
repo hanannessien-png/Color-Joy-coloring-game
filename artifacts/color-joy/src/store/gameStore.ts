@@ -17,6 +17,7 @@ interface GameState {
   runs: Record<string, LevelRun>;
   addMistake: (imageId: string) => void;
   resetRun: (imageId: string) => void;
+  addCoins: (amount: number) => void;
   /** Records a finished level; returns the coins earned this time. */
   finishLevel: (imageId: string, stars: number) => number;
 }
@@ -32,6 +33,7 @@ export const useGameStore = create<GameState>()(
           const run = s.runs[imageId] ?? { mistakes: 0, hints: 0 };
           return { runs: { ...s.runs, [imageId]: { ...run, mistakes: run.mistakes + 1 } } };
         }),
+      addCoins: (amount) => set((s) => ({ coins: s.coins + amount })),
       resetRun: (imageId) =>
         set((s) => {
           const runs = { ...s.runs };

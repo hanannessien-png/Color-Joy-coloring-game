@@ -1,5 +1,5 @@
-import React, { useEffect } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
@@ -11,11 +11,17 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 import { useColors } from '@/hooks/useColors';
 import { fonts } from '@/constants/fonts';
-import { TargetArt } from '@/src/components/ArtSvg';
+import { ArtSvg } from '@/src/components/ArtSvg';
 import type { ColoringImage } from '@/src/types';
 
 interface Props {
   image: ColoringImage;
+  /** Which saved coloring to preview (the player's own work). */
+  artKey: string;
+  /** Rewarded ad that doubles the coins; omit to hide the offer. */
+  onDoubleCoins?: () => Promise<boolean>;
+  /** False while no rewarded ad is loaded yet. */
+  doubleReady?: boolean;
   /** Level results; omit for free coloring. */
   stars?: number;
   coinsEarned?: number;
@@ -50,6 +56,9 @@ function Star({ index, earned }: { index: number; earned: boolean }) {
 
 export function CompletionOverlay({
   image,
+  artKey,
+  onDoubleCoins,
+  doubleReady = true,
   stars,
   coinsEarned = 0,
   mistakes,
@@ -68,6 +77,14 @@ export function CompletionOverlay({
   const bgStyle = useAnimatedStyle(() => ({ opacity: fade.value }));
   const cardStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.value }] }));
   const isLevel = stars !== undefined;
+  const [bonus, setBonus] = useState<'idle' | 'busy' | 'done' | 'failed'>('idle');
+  const watchAd = async () => {
+    if (!onDoubleCoins || bonus === 'busy' || bonus === 'done') return;
+    setBonus('busy');
+    const ok = await onDoubleCoins();
+    setBonus(ok ? 'done' : 'failed');
+  };
+  const showBonus = isLevel && !!onDoubleCoins && coinsEarned > 0;
 
   return (
     <Animated.View style={[styles.overlay, bgStyle]}>
@@ -89,7 +106,7 @@ export function CompletionOverlay({
           {isLevel ? (stars === 3 ? 'Perfect!' : 'Level complete!') : 'Masterpiece!'}
         </Text>
         <View style={[styles.preview, { borderColor: c.border }]}>
-          <TargetArt image={image} size={110} strokeWidth={6} />
+          <ArtSvg image={image} artKey={artKey} size={110} strokeWidth={6} />
         </View>
         {isLevel ? (
           <View style={styles.statsRow}>
@@ -101,7 +118,9 @@ export function CompletionOverlay({
             </View>
             <View style={[styles.stat, { backgroundColor: c.secondary }]}>
               <View style={[styles.coin, { backgroundColor: c.gold, borderColor: c.ink }]} />
-              <Text style={[styles.statText, { color: c.ink }]}>+{coinsEarned}</Text>
+              <Text style={[styles.statText, { color: c.ink }]}>
+                +{bonus === 'done' ? coinsEarned * 2 : coinsEarned}
+              </Text>
             </View>
           </View>
         ) : (
@@ -109,6 +128,43 @@ export function CompletionOverlay({
             You colored every part of {image.title}.
           </Text>
         )}
+        {showBonus ? (
+          <Pressable
+            testID="double-coins"
+            disabled={bonus === 'busy' || bonus === 'done' || (!doubleReady && bonus !== 'failed')}
+            onPress={watchAd}
+            style={({ pressed }) => [
+              styles.bonusBtn,
+              {
+                backgroundColor: bonus === 'done' ? c.muted : c.sun,
+                borderColor: c.ink,
+                opacity: !doubleReady && bonus === 'idle' ? 0.6 : 1,
+                transform: [{ translateY: pressed ? 2 : 0 }],
+              },
+            ]}
+          >
+            {bonus === 'busy' ? (
+              <ActivityIndicator color={c.ink} />
+            ) : (
+              <>
+                <MaterialCommunityIcons
+                  name={bonus === 'done' ? 'check-bold' : 'play-box-multiple-outline'}
+                  size={20}
+                  color={c.ink}
+                />
+                <Text style={[styles.bonusText, { color: c.ink }]}>
+                  {bonus === 'done'
+                    ? 'Coins doubled!'
+                    : bonus === 'failed'
+                      ? 'Ad not available — try again'
+                      : doubleReady
+                        ? `Watch an ad · x2 coins`
+                        : 'Ad loading…'}
+                </Text>
+              </>
+            )}
+          </Pressable>
+        ) : null}
         <Pressable
           testID="done-primary"
           onPress={onPrimary}
@@ -199,5 +255,17 @@ const styles = StyleSheet.create({
     elevation: 3,
   },
   primaryText: { fontFamily: fonts.black, fontSize: 18, color: '#FFFFFF' },
+  bonusBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    alignSelf: 'stretch',
+    height: 48,
+    borderRadius: 24,
+    borderWidth: 2.5,
+    marginTop: 4,
+  },
+  bonusText: { fontFamily: fonts.extrabold, fontSize: 15 },
   link: { fontFamily: fonts.extrabold, fontSize: 15, paddingVertical: 6 },
 });
