@@ -27,12 +27,13 @@ import { AdBanner } from '@/src/ads/AdBanner';
 import { CoinChip } from '@/src/components/CoinChip';
 import { IconButton } from '@/src/components/IconButton';
 import { CATEGORY_BY_ID } from '@/src/data/categories';
-import { LEVELS } from '@/src/data/levels';
+import { LEVELS, starsRequired } from '@/src/data/levels';
 import { useArtStore } from '@/src/store/artStore';
 import {
   currentLevelIndex,
   isLevelUnlocked,
   levelArtKey,
+  totalStars,
   useGameStore,
 } from '@/src/store/gameStore';
 import type { ColoringImage } from '@/src/types';
@@ -64,12 +65,17 @@ function LevelNode({
   stars,
   unlocked,
   current,
+  gate,
+  starTotal,
 }: {
   level: ColoringImage;
   index: number;
   stars: number;
   unlocked: boolean;
   current: boolean;
+  /** Total stars this level needs (0 = no gate). */
+  gate: number;
+  starTotal: number;
 }) {
   const c = useColors();
   const cat = CATEGORY_BY_ID[level.category];
@@ -99,7 +105,7 @@ function LevelNode({
         style={({ pressed }) => [
           styles.node,
           {
-            backgroundColor: unlocked ? (done ? c.paper : cat.color) : c.locked,
+            backgroundColor: unlocked ? (done ? c.paper : cat.color) : gate > 0 ? c.plum : c.locked,
             borderColor: c.ink,
             shadowColor: c.ink,
             transform: [{ translateY: pressed && unlocked ? 4 : 0 }],
@@ -108,7 +114,14 @@ function LevelNode({
         ]}
       >
         {!unlocked ? (
-          <MaterialCommunityIcons name="lock" size={30} color={c.paper} />
+          gate > 0 ? (
+            <View style={styles.gateInner}>
+              <MaterialCommunityIcons name="star" size={26} color={c.gold} />
+              <Text style={[styles.gateNum, { color: c.paper }]}>{gate}</Text>
+            </View>
+          ) : (
+            <MaterialCommunityIcons name="lock" size={30} color={c.paper} />
+          )
         ) : done ? (
           <TargetArt image={level} size={NODE - 14} strokeWidth={8} />
         ) : (
@@ -130,6 +143,13 @@ function LevelNode({
       ) : current ? (
         <View style={[styles.playTag, { backgroundColor: c.ink }]}>
           <Text style={styles.playTagText}>PLAY</Text>
+        </View>
+      ) : gate > 0 && !unlocked ? (
+        <View testID={`gate-${index + 1}`} style={[styles.gateTag, { backgroundColor: c.plum }]}>
+          <MaterialCommunityIcons name="star" size={12} color={c.gold} />
+          <Text style={[styles.gateTagText, { color: c.paper }]}>
+            {Math.min(starTotal, gate)}/{gate} stars
+          </Text>
         </View>
       ) : (
         <Text style={[styles.nodeTitle, { color: unlocked ? c.ink : c.mutedForeground }]}>
@@ -165,7 +185,8 @@ export default function LevelsScreen() {
       return `C${prev.x} ${my} ${p.x} ${my} ${p.x} ${p.y}`;
     })
     .join('');
-  const finished = Object.keys(stars).filter((id) => LEVELS.some((l) => l.id === id)).length;
+  const starTotal = totalStars(stars);
+  const maxStars = LEVELS.length * 3;
 
   useEffect(() => {
     const y = Math.max(0, current * ROW - 160);
@@ -184,10 +205,14 @@ export default function LevelsScreen() {
         />
         <View style={{ flex: 1 }}>
           <Text style={[styles.title, { color: c.ink }]}>Levels</Text>
-          <Text style={[styles.sub, { color: c.mutedForeground }]}>
-            {finished} of {LEVELS.length} finished
-          </Text>
+          <View style={styles.subRow}>
+            <MaterialCommunityIcons name="star" size={15} color={c.gold} />
+            <Text testID="total-stars" style={[styles.sub, { color: c.mutedForeground }]}>
+              {starTotal} / {maxStars} stars
+            </Text>
+          </View>
         </View>
+        <IconButton icon="storefront-outline" size={44} accessibilityLabel="Shop" testID="open-store" onPress={() => router.push('/store')} />
         <CoinChip />
       </View>
 
@@ -217,7 +242,9 @@ export default function LevelsScreen() {
                 index={i}
                 stars={stars[level.id] ?? 0}
                 unlocked={isLevelUnlocked(i, stars)}
-                current={i === current && !stars[level.id]}
+                current={i === current && !stars[level.id] && isLevelUnlocked(i, stars)}
+                gate={starsRequired(i)}
+                starTotal={starTotal}
               />
             </View>
           ))}
@@ -243,7 +270,19 @@ const styles = StyleSheet.create({
     borderBottomWidth: 2,
   },
   title: { fontFamily: fonts.black, fontSize: 26 },
-  sub: { fontFamily: fonts.bold, fontSize: 13, marginTop: -2 },
+  sub: { fontFamily: fonts.bold, fontSize: 13 },
+  subRow: { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: -2 },
+  gateInner: { alignItems: 'center', marginTop: -2 },
+  gateNum: { fontFamily: fonts.black, fontSize: 18, marginTop: -4 },
+  gateTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  gateTagText: { fontFamily: fonts.black, fontSize: 12 },
   nodeSlot: { position: 'absolute', width: 140, alignItems: 'center' },
   nodeWrap: { alignItems: 'center', gap: 8 },
   node: {

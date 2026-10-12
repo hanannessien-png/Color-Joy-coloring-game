@@ -35,8 +35,18 @@ Added by the user after milestone 1 (2026-10-12):
 
 ## AdMob (user supplied their real IDs, 2026-10-12)
 - The real unit IDs are used only in release builds; dev builds always use Google TestIds. All caps live in one ads config file.
-- Caps: app-open at most every 4 min and never during the first-ever session; interstitial every 3 finished pictures with at least 2 min between them, shown only when leaving the completion card; rewarded max 10/day ("x2 coins" on the level card); banners only on the levels map and gallery, never in the editor.
+- Caps: NO app-open ads (Play Families bans ads right at launch); interstitial every 3 finished pictures with at least 2 min between them, shown only when leaving the completion card; rewarded max 10/day ("x2 coins" on the level card); banners only on the levels map and gallery, never in the editor.
 - The SDK is required lazily: none on web, none in Expo Go. Preview rewarded grants the reward directly so the flow can be tested.
-- The neutral age gate is a full-screen overlay. Ages 13 and under (year-based, conservative) get child-directed, under-age-of-consent, G-rated, non-personalized ads with no UMP. Adults get UMP gatherConsent, then PG.
+- SUPERSEDED: the age gate was removed (the user said the game is for everyone, 2026-10-12). Every player gets family-safe ads: child-directed, under-age-of-consent, G-rated, non-personalized, no UMP, and the AD_ID permission blocked.
 - Storage, SYSTEM_ALERT_WINDOW and other unused permissions are blocked in app.json (Families policy).
   **Why:** a kids-oriented app on Google Play Families; the user tests only in the web preview.
+
+## Second round (user, 2026-10-12)
+- Levels no longer show numbers. The player must pick the right color by looking at the reference picture.
+- The palette is drawn as colored wooden pencils; pencil-box skins are sold in the shop.
+- Difficulty: similar-shade decoy pencils that get harder per level; 3 hearts per level (a wrong color costs a heart, 0 hearts means retry); star gates on later levels. More levels were NOT requested.
+- Shop: watch an ad for coins; hints; magic tools (wand = one part, bomb = a whole color); pencil boxes; unlocking locked free-coloring pictures.
+- The picture must dominate the editor: as large as possible, little empty chrome. **Why:** low-vision players.
+- The whole game should feel premium ("مصروف عليها") from the title screen to gameplay.
+- Tools used during a level are spent: retrying after 0 hearts resets hearts and the picture, never the tool counts. Revive with an ad (+1 heart) is allowed once per run.
+- Portrait phones are width-limited for the square picture, so spare height goes to bigger pencils (width scales with window height), not to padding.

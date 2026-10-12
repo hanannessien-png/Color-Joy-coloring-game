@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { GestureDetector } from 'react-native-gesture-handler';
@@ -13,26 +13,32 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import { useColors } from '@/hooks/useColors';
+import { fonts } from '@/constants/fonts';
 import {
   maybeShowInterstitial,
   noteCompletion,
+  rewardedLeftToday,
   showRewarded,
   useAdStatus,
 } from '@/src/ads/adManager';
-import { fonts } from '@/constants/fonts';
 import { ArtSvg, regionIdAtPoint, TargetArt } from '@/src/components/ArtSvg';
 import { CompletionOverlay } from '@/src/components/CompletionOverlay';
+import { FailOverlay } from '@/src/components/FailOverlay';
+import { HeartsBar } from '@/src/components/HeartsBar';
 import { IconButton } from '@/src/components/IconButton';
-import { NumberPalette } from '@/src/components/NumberPalette';
 import { Palette } from '@/src/components/Palette';
+import { PencilTray } from '@/src/components/PencilTray';
+import { ToolBar } from '@/src/components/ToolBar';
 import { IMAGE_BY_ID } from '@/src/data/images';
-import { LEVEL_INDEX, LEVELS, starsFor } from '@/src/data/levels';
+import { LEVEL_INDEX, LEVELS, levelPencils, starsFor } from '@/src/data/levels';
+import { TOOL_BY_ID, type ToolId } from '@/src/data/shop';
 import { useCanvasZoom } from '@/src/hooks/useCanvasZoom';
 import { useArtStore } from '@/src/store/artStore';
-import { levelArtKey, useGameStore } from '@/src/store/gameStore';
+import { levelArtKey, runOf, useGameStore } from '@/src/store/gameStore';
 import { useHistoryStore } from '@/src/store/historyStore';
 import { usePaletteStore } from '@/src/store/paletteStore';
 import type { ColoringImage, Fill } from '@/src/types';
+import { sameColor } from '@/src/utils/color';
 
 type Mode = 'level' | 'free';
 
@@ -50,7 +56,7 @@ export default function ColorScreen() {
           onPress={() => router.replace('/')}
           style={[styles.missingBtn, { backgroundColor: c.primary, borderColor: c.ink }]}
         >
-          <Text style={styles.missingBtnText}>Back to start</Text>
+          <Text style={[styles.missingBtnText, { color: c.paper }]}>Back to start</Text>
         </Pressable>
       </View>
     );
@@ -65,17 +71,28 @@ interface Result {
   mistakes?: number;
 }
 
+const FRAME_MARGIN = 6;
+const CONTROLS_H = 44;
+
 function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
   const c = useColors();
   const insets = useSafeAreaInsets();
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const isLevel = mode === 'level';
+  const { height: winH } = useWindowDimensions();
+  // Tall phones: spend spare height on bigger, easier-to-see pencils.
+  const pencilW = winH >= 820 ? 44 : winH >= 720 ? 38 : 34;
   const artKey = isLevel ? levelArtKey(image.id) : image.id;
   const levelIndex = LEVEL_INDEX[image.id] ?? 0;
 
+  // The picture is as big as the screen allows; the paper hugs it tightly.
   const [area, setArea] = useState({ w: 0, h: 0 });
-  const size = Math.max(0, Math.floor(Math.min(area.w - 24, area.h - 16)));
+  const frame = Math.max(
+    0,
+    Math.floor(Math.min(area.w - FRAME_MARGIN * 2, area.h - CONTROLS_H - FRAME_MARGIN)),
+  );
+  const size = Math.max(0, frame - 5);
 
   const total = image.regions.length;
   const fills = useArtStore((s) => s.fills[artKey]);
@@ -83,50 +100,60 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
   const pct = total ? Math.round((filled / total) * 100) : 0;
   const canUndo = useHistoryStore((s) => s.undoStack.length > 0);
   const canRedo = useHistoryStore((s) => s.redoStack.length > 0);
-  const mistakes = useGameStore((s) => s.runs[image.id]?.mistakes ?? 0);
+  const hearts = useGameStore((s) => runOf(s.runs, image.id).hearts);
+  const revived = useGameStore((s) => runOf(s.runs, image.id).revived);
+  const rewardedReady = useAdStatus((s) => s.rewardedReady);
   const [result, setResult] = useState<Result | null>(null);
   const [showRef, setShowRef] = useState(false);
+
+  // Level state: chosen pencil, armed tool, hinted part.
+  const pencils = useMemo(() => (isLevel ? levelPencils(image) : []), [isLevel, image]);
+  const [pencil, setPencil] = useState<string | null>(null);
+  const [armed, setArmed] = useState<ToolId | null>(null);
+  const [hintId, setHintId] = useState<string | null>(null);
+  const failed = isLevel && hearts <= 0 && !result;
 
   const regionById = useMemo(
     () => Object.fromEntries(image.regions.map((r) => [r.id, r])),
     [image],
   );
+  const targetOf = useCallback(
+    (regionId: string) => {
+      const r = regionById[regionId];
+      return r ? image.palette[r.n - 1] : undefined;
+    },
+    [regionById, image],
+  );
 
-  // Paint-by-number progress for each color number.
-  const numberProgress = useMemo(() => {
-    const totals: Record<number, number> = {};
-    const done: Record<number, number> = {};
-    for (const r of image.regions) {
-      totals[r.n] = (totals[r.n] ?? 0) + 1;
-      if (fills?.[r.id]) done[r.n] = (done[r.n] ?? 0) + 1;
-    }
-    const out: Record<number, number> = {};
-    for (const n of Object.keys(totals)) out[+n] = (done[+n] ?? 0) / totals[+n];
-    return out;
+  // Pencils whose parts are all colored get a check mark.
+  const doneColors = useMemo(() => {
+    const left = new Set<string>();
+    for (const r of image.regions) if (!fills?.[r.id]) left.add(image.palette[r.n - 1].toLowerCase());
+    return new Set(image.palette.map((p) => p.toLowerCase()).filter((p) => !left.has(p)));
   }, [image, fills]);
-
-  const firstOpen = () => {
-    const n = image.palette.findIndex((_, i) => (numberProgress[i + 1] ?? 0) < 1);
-    return n === -1 ? 1 : n + 1;
-  };
-  const [activeNumber, setActiveNumber] = useState<number>(firstOpen);
-
-  // If the selected color is already finished (e.g. saved progress loaded
-  // after the screen opened), jump to the first color that still has work.
-  useEffect(() => {
-    if (!isLevel || (numberProgress[activeNumber] ?? 0) < 1) return;
-    const open = image.palette.findIndex((_, i) => (numberProgress[i + 1] ?? 0) < 1);
-    if (open !== -1) setActiveNumber(open + 1);
-  }, [isLevel, numberProgress, activeNumber, image]);
-  const rewardedReady = useAdStatus((s) => s.rewardedReady);
 
   useEffect(() => {
     useHistoryStore.getState().begin(artKey);
   }, [artKey]);
 
-  // Wrong-color shake.
+  // Clear a hint once its part has been colored.
+  useEffect(() => {
+    if (hintId && fills?.[hintId]) setHintId(null);
+  }, [hintId, fills]);
+
+  // Feedback animations: canvas shake (wrong color), tray nudge (no pencil).
   const shake = useSharedValue(0);
   const shakeStyle = useAnimatedStyle(() => ({ transform: [{ translateX: shake.value }] }));
+  const nudge = useSharedValue(0);
+  const nudgeStyle = useAnimatedStyle(() => ({ transform: [{ translateY: nudge.value }] }));
+  const wiggle = (v: typeof shake, amp: number) => {
+    v.value = withSequence(
+      withTiming(-amp, { duration: 50 }),
+      withTiming(amp, { duration: 50 }),
+      withTiming(-amp / 2, { duration: 50 }),
+      withTiming(0, { duration: 50 }),
+    );
+  };
 
   const finishIfComplete = useCallback(() => {
     const now = useArtStore.getState().fills[artKey];
@@ -134,8 +161,8 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     noteCompletion();
     if (isLevel) {
-      const run = useGameStore.getState().runs[image.id] ?? { mistakes: 0, hints: 0 };
-      const stars = starsFor(run.mistakes, run.hints);
+      const run = runOf(useGameStore.getState().runs, image.id);
+      const stars = starsFor(run.mistakes);
       const coins = useGameStore.getState().finishLevel(image.id, stars);
       setResult({ stars, coins, mistakes: run.mistakes });
     } else {
@@ -143,49 +170,71 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     }
   }, [artKey, total, isLevel, image.id]);
 
+  /** Level mode: color parts with their right colors. */
+  const paintCorrect = useCallback(
+    (ids: string[]) => {
+      const now = useArtStore.getState().fills[artKey] ?? {};
+      const changes = ids
+        .filter((id) => !now[id])
+        .map((id) => ({ id, fill: { kind: 'solid', color: targetOf(id) ?? '' } as Fill }));
+      if (!changes.length) return;
+      useArtStore.getState().applyChanges(artKey, changes);
+      finishIfComplete();
+    },
+    [artKey, targetOf, finishIfComplete],
+  );
+
   const fillRegion = useCallback(
     (regionId: string) => {
-      if (isLevel) {
-        const region = regionById[regionId];
-        if (!region || useArtStore.getState().fills[artKey]?.[regionId]) return;
-        if (region.n !== activeNumber) {
-          useGameStore.getState().addMistake(image.id);
-          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
-          shake.value = withSequence(
-            withTiming(-8, { duration: 50 }),
-            withTiming(8, { duration: 50 }),
-            withTiming(-5, { duration: 50 }),
-            withTiming(0, { duration: 50 }),
-          );
-          return;
-        }
-        const fill: Fill = { kind: 'solid', color: image.palette[region.n - 1] };
-        useArtStore.getState().applyChanges(artKey, [{ id: regionId, fill }]);
+      if (!isLevel) {
+        const color = usePaletteStore.getState().color;
+        const before = Object.keys(useArtStore.getState().fills[artKey] ?? {}).length;
+        const changed = useHistoryStore
+          .getState()
+          .commit(artKey, [{ id: regionId, next: { kind: 'solid', color } }]);
+        if (!changed) return;
+        usePaletteStore.getState().markUsed(color);
         Haptics.selectionAsync().catch(() => {});
-        // Move on to the next unfinished color when this one is complete.
-        const now = useArtStore.getState().fills[artKey] ?? {};
-        const left = image.regions.some((r) => r.n === activeNumber && !now[r.id]);
-        if (!left) {
-          const next = image.palette.findIndex(
-            (_, i) => image.regions.some((r) => r.n === i + 1 && !now[r.id]),
-          );
-          if (next !== -1) setActiveNumber(next + 1);
-        }
-        finishIfComplete();
+        // Celebrate only the tap that completes the picture, not later recolors.
+        if (before < total) finishIfComplete();
         return;
       }
-      const color = usePaletteStore.getState().color;
-      const before = Object.keys(useArtStore.getState().fills[artKey] ?? {}).length;
-      const changed = useHistoryStore
-        .getState()
-        .commit(artKey, [{ id: regionId, next: { kind: 'solid', color } }]);
-      if (!changed) return;
-      usePaletteStore.getState().markUsed(color);
+
+      const target = targetOf(regionId);
+      if (!target || useArtStore.getState().fills[artKey]?.[regionId]) return;
+      if (runOf(useGameStore.getState().runs, image.id).hearts <= 0) return;
+
+      if (armed) {
+        if (!useGameStore.getState().consumeTool(armed)) {
+          setArmed(null);
+          return;
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+        const ids =
+          armed === 'bomb'
+            ? image.regions.filter((r) => sameColor(image.palette[r.n - 1], target)).map((r) => r.id)
+            : [regionId];
+        setArmed(null);
+        paintCorrect(ids);
+        return;
+      }
+
+      if (!pencil) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning).catch(() => {});
+        wiggle(nudge, 6);
+        return;
+      }
+      if (!sameColor(pencil, target)) {
+        useGameStore.getState().addMistake(image.id);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(() => {});
+        wiggle(shake, 9);
+        return;
+      }
       Haptics.selectionAsync().catch(() => {});
-      // Celebrate only the tap that completes the picture, not later recolors.
-      if (before < total) finishIfComplete();
+      paintCorrect([regionId]);
     },
-    [isLevel, regionById, artKey, activeNumber, image, shake, finishIfComplete, total],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [isLevel, artKey, total, finishIfComplete, targetOf, image, armed, pencil, paintCorrect],
   );
 
   const onWebTap = useCallback(
@@ -207,6 +256,28 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     [fillRegion, shouldIgnoreTap],
   );
 
+  const pressTool = (id: ToolId) => {
+    if (armed === id) {
+      setArmed(null);
+      return;
+    }
+    if (id !== 'hint') {
+      setArmed(id);
+      return;
+    }
+    setArmed(null);
+    const now = useArtStore.getState().fills[artKey] ?? {};
+    // A hint already showing: just pick its pencil again, for free.
+    const existing = hintId && !now[hintId] ? hintId : null;
+    const regionId = existing ?? image.regions.find((r) => !now[r.id])?.id;
+    if (!regionId) return;
+    if (!existing && !useGameStore.getState().consumeTool('hint')) return;
+    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    setHintId(regionId);
+    const target = targetOf(regionId);
+    if (target) setPencil(pencils.find((p) => sameColor(p, target)) ?? target);
+  };
+
   const goBack = () => (router.canGoBack() ? router.back() : router.replace(isLevel ? '/levels' : '/'));
   const nextLevel = LEVELS[levelIndex + 1];
 
@@ -223,6 +294,21 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     return ok;
   };
 
+  const revive = async () => {
+    const ok = await showRewarded();
+    if (ok) useGameStore.getState().revive(image.id);
+    return ok;
+  };
+
+  const retry = () => {
+    useArtStore.getState().clear(artKey);
+    useGameStore.getState().resetRun(image.id);
+    setPencil(null);
+    setArmed(null);
+    setHintId(null);
+    zoom.reset();
+  };
+
   const goNextLevel = () => {
     maybeShowInterstitial();
     if (!nextLevel) return goBack();
@@ -233,13 +319,18 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
     router.replace({ pathname: '/color/[id]', params: { id: nextLevel.id, mode: 'level' } });
   };
 
-  const miniRef = 62;
-  const bigRef = Math.max(0, size - 40);
+  const banner = isLevel
+    ? armed
+      ? `${TOOL_BY_ID[armed].name}: tap a part`
+      : !pencil && filled === 0
+        ? 'Pick a pencil, tap a part'
+        : null
+    : null;
 
   return (
-    <View style={[styles.root, { backgroundColor: c.background, paddingTop: topPad + 6 }]}>
+    <View style={[styles.root, { backgroundColor: c.background, paddingTop: topPad + 4 }]}>
       <View style={styles.topBar}>
-        <IconButton icon="chevron-left" accessibilityLabel="Back" testID="back" onPress={goBack} />
+        <IconButton icon="chevron-left" size={44} accessibilityLabel="Back" testID="back" onPress={goBack} />
         <View style={styles.titleWrap}>
           <Text style={[styles.title, { color: c.ink }]} numberOfLines={1}>
             {isLevel ? `Level ${levelIndex + 1}` : image.title}
@@ -253,16 +344,30 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
             />
           </View>
         </View>
-        {!isLevel ? (
+        {isLevel ? (
+          <>
+            <HeartsBar hearts={hearts} />
+            <Pressable
+              testID="reference-mini"
+              accessibilityLabel="Show finished picture"
+              onPress={() => setShowRef(true)}
+              style={[styles.refMini, { borderColor: c.ink, backgroundColor: c.paper }]}
+            >
+              <TargetArt image={image} size={40} strokeWidth={9} />
+            </Pressable>
+          </>
+        ) : (
           <>
             <IconButton
               icon="image-outline"
+              size={44}
               accessibilityLabel="Show finished picture"
               testID="toggle-reference"
               onPress={() => setShowRef(true)}
             />
             <IconButton
               icon="undo-variant"
+              size={44}
               accessibilityLabel="Undo"
               testID="undo"
               disabled={!canUndo}
@@ -270,13 +375,14 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
             />
             <IconButton
               icon="redo-variant"
+              size={44}
               accessibilityLabel="Redo"
               testID="redo"
               disabled={!canRedo}
               onPress={() => useHistoryStore.getState().redo()}
             />
           </>
-        ) : null}
+        )}
       </View>
 
       <View
@@ -290,17 +396,22 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
                 collapsable={false}
                 style={[
                   styles.canvasFrame,
-                  { width: size, height: size, borderColor: c.ink, backgroundColor: c.paper },
+                  {
+                    width: frame,
+                    height: frame,
+                    borderColor: c.border,
+                    backgroundColor: c.paper,
+                    shadowColor: c.ink,
+                  },
                 ]}
               >
                 <Animated.View style={zoom.animatedStyle}>
                   <ArtSvg
                     image={image}
-                    size={size - 6}
+                    size={size}
                     artKey={artKey}
                     onRegionPress={onRegionPress}
-                    showNumbers={isLevel}
-                    activeNumber={isLevel ? activeNumber : undefined}
+                    hintRegionId={isLevel ? hintId : null}
                   />
                 </Animated.View>
               </View>
@@ -308,24 +419,28 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
           </Animated.View>
         ) : null}
 
-        <View style={styles.zoomCol}>
-          <IconButton icon="plus" size={40} accessibilityLabel="Zoom in" testID="zoom-in" onPress={zoom.zoomIn} />
-          <IconButton icon="minus" size={40} accessibilityLabel="Zoom out" testID="zoom-out" onPress={zoom.zoomOut} />
-          <IconButton icon="fit-to-screen-outline" size={40} accessibilityLabel="Fit picture" testID="zoom-fit" onPress={zoom.reset} />
-        </View>
-        <View style={styles.badges}>
-          <View style={[styles.badge, { backgroundColor: c.paper, borderColor: c.ink }]}>
-            <Text style={[styles.badgeText, { color: c.ink }]}>{pct}%</Text>
+        <View style={[styles.controls, { width: frame }]}>
+          <View style={styles.bannerSlot}>
+            {banner ? (
+              <View style={[styles.banner, { backgroundColor: c.plum }]}>
+                <Text style={[styles.bannerText, { color: c.paper }]} numberOfLines={1}>
+                  {banner}
+                </Text>
+                {armed ? (
+                  <Pressable testID="cancel-tool" hitSlop={10} onPress={() => setArmed(null)}>
+                    <MaterialCommunityIcons name="close-circle" size={20} color={c.paper} />
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : (
+              <Text testID="progress-pct" style={[styles.pctText, { color: c.mutedForeground }]}>
+                {pct}% colored
+              </Text>
+            )}
           </View>
-          {isLevel ? (
-            <View
-              testID="mistakes"
-              style={[styles.badge, { backgroundColor: mistakes ? c.errorSoft : c.paper, borderColor: c.ink }]}
-            >
-              <MaterialCommunityIcons name="close-thick" size={14} color={mistakes ? c.destructive : c.mutedForeground} />
-              <Text style={[styles.badgeText, { color: c.ink }]}>{mistakes}</Text>
-            </View>
-          ) : null}
+          <IconButton icon="minus" size={36} accessibilityLabel="Zoom out" testID="zoom-out" onPress={zoom.zoomOut} />
+          <IconButton icon="fit-to-screen-outline" size={36} accessibilityLabel="Fit picture" testID="zoom-fit" onPress={zoom.reset} />
+          <IconButton icon="plus" size={36} accessibilityLabel="Zoom in" testID="zoom-in" onPress={zoom.zoomIn} />
         </View>
 
         {showRef ? (
@@ -333,48 +448,47 @@ function Editor({ image, mode }: { image: ColoringImage; mode: Mode }) {
             testID="reference-big"
             accessibilityLabel="Close reference picture"
             onPress={() => setShowRef(false)}
-            style={[styles.refBigWrap, { backgroundColor: 'rgba(255,247,236,0.92)' }]}
+            style={[styles.refBigWrap, { backgroundColor: c.scrim }]}
           >
             <View style={[styles.refBig, { borderColor: c.ink, backgroundColor: c.paper }]}>
-              <TargetArt image={image} size={bigRef} />
+              <TargetArt image={image} size={Math.max(0, size - 24)} />
             </View>
-            <Text style={[styles.refHint, { color: c.ink }]}>Color it like this · tap to close</Text>
+            <View style={[styles.refHintPill, { backgroundColor: c.paper }]}>
+              <Text style={[styles.refHint, { color: c.ink }]}>Color it like this · tap to close</Text>
+            </View>
           </Pressable>
         ) : null}
       </View>
 
-      <View
-        style={[
-          styles.panel,
-          { backgroundColor: c.paper, borderColor: c.border, paddingBottom: bottomPad + 10 },
-        ]}
-      >
+      <View style={[styles.panel, { paddingBottom: bottomPad + 6 }]}>
         {isLevel ? (
-          <View style={styles.levelPanel}>
-            <Pressable
-              testID="reference-mini"
-              accessibilityLabel="Show finished picture"
-              onPress={() => setShowRef(true)}
-              style={[styles.refMini, { borderColor: c.ink, backgroundColor: c.paper }]}
-            >
-              <TargetArt image={image} size={miniRef} strokeWidth={7} />
-              <View style={[styles.refTag, { backgroundColor: c.ink }]}>
-                <MaterialCommunityIcons name="magnify-plus-outline" size={12} color="#FFFFFF" />
-              </View>
-            </Pressable>
-            <View style={{ flex: 1 }}>
-              <NumberPalette
-                palette={image.palette}
-                active={activeNumber}
-                progress={numberProgress}
-                onSelect={setActiveNumber}
+          <>
+            <ToolBar armed={armed} onUse={pressTool} />
+            <Animated.View style={nudgeStyle}>
+              <PencilTray
+                colors={pencils}
+                selected={pencil}
+                onSelect={(p) => {
+                  setPencil(p);
+                  if (armed) setArmed(null);
+                }}
+                done={doneColors}
+                pencilWidth={pencilW}
               />
-            </View>
-          </View>
+            </Animated.View>
+          </>
         ) : (
-          <Palette />
+          <Palette pencilWidth={pencilW} />
         )}
       </View>
+
+      {failed ? (
+        <FailOverlay
+          onRevive={!revived && rewardedReady && rewardedLeftToday() > 0 ? revive : undefined}
+          onRetry={retry}
+          onLeave={goBack}
+        />
+      ) : null}
 
       {result ? (
         isLevel ? (
@@ -411,70 +525,50 @@ const styles = StyleSheet.create({
   topBar: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 12,
-    paddingBottom: 6,
+    gap: 6,
+    paddingHorizontal: 8,
+    paddingBottom: 4,
   },
-  titleWrap: { flex: 1, gap: 5, paddingHorizontal: 4 },
-  title: { fontFamily: fonts.black, fontSize: 19 },
-  progressTrack: { height: 10, borderRadius: 5, borderWidth: 1.5, overflow: 'hidden' },
-  progressFill: { height: '100%', borderRadius: 5 },
+  titleWrap: { flex: 1, gap: 4, paddingHorizontal: 2 },
+  title: { fontFamily: fonts.black, fontSize: 18 },
+  progressTrack: { height: 8, borderRadius: 4, borderWidth: 1.5, overflow: 'hidden' },
+  progressFill: { height: '100%', borderRadius: 4 },
+  refMini: { padding: 1, borderRadius: 12, borderWidth: 2.5, overflow: 'hidden' },
   canvasArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   canvasFrame: {
-    borderRadius: 24,
-    borderWidth: 3,
+    borderRadius: 18,
+    borderWidth: 2.5,
     overflow: 'hidden',
     alignItems: 'center',
     justifyContent: 'center',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.18,
+    shadowRadius: 0,
+    elevation: 3,
   },
-  levelPanel: { flexDirection: 'row', alignItems: 'center', paddingLeft: 12 },
-  refMini: {
-    padding: 2,
-    borderRadius: 14,
-    borderWidth: 2.5,
-    marginRight: 2,
-  },
-  refTag: {
-    position: 'absolute',
-    right: -6,
-    bottom: -6,
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  refBigWrap: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 10,
-  },
-  refBig: { padding: 6, borderRadius: 24, borderWidth: 3 },
-  refHint: { fontFamily: fonts.extrabold, fontSize: 15 },
-  zoomCol: { position: 'absolute', right: 18, bottom: 16, gap: 8 },
-  badges: { position: 'absolute', left: 22, bottom: 16, flexDirection: 'row', gap: 6 },
-  badge: {
+  controls: { height: CONTROLS_H, flexDirection: 'row', alignItems: 'center', gap: 6 },
+  bannerSlot: { flex: 1, alignItems: 'flex-start' },
+  banner: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 8,
+    maxWidth: '100%',
     paddingHorizontal: 12,
     height: 34,
     borderRadius: 17,
-    borderWidth: 2,
   },
-  badgeText: { fontFamily: fonts.black, fontSize: 15 },
-  panel: {
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
-    borderWidth: 2,
-    borderBottomWidth: 0,
-    paddingTop: 10,
+  bannerText: { flexShrink: 1, fontFamily: fonts.extrabold, fontSize: 13 },
+  refBigWrap: {
+    ...StyleSheet.absoluteFill,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 12,
   },
+  refBig: { padding: 8, borderRadius: 24, borderWidth: 3 },
+  refHintPill: { paddingHorizontal: 14, paddingVertical: 6, borderRadius: 16 },
+  refHint: { fontFamily: fonts.extrabold, fontSize: 14 },
+  pctText: { fontFamily: fonts.extrabold, fontSize: 14, paddingLeft: 6 },
+  panel: { gap: 10, paddingTop: 10 },
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12, padding: 24 },
   missingText: { fontFamily: fonts.extrabold, fontSize: 17 },
   missingBtn: {
@@ -485,5 +579,5 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  missingBtnText: { fontFamily: fonts.black, fontSize: 17, color: '#FFFFFF' },
+  missingBtnText: { fontFamily: fonts.black, fontSize: 17 },
 });

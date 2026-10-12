@@ -1,7 +1,5 @@
-import { AppState, type AppStateStatus } from 'react-native';
 import { create } from 'zustand';
 import type {
-  AppOpenAd,
   InterstitialAd,
   RequestOptions,
   RewardedAd,
@@ -12,7 +10,7 @@ import { AD_RULES, AD_UNITS, type AdKind } from '@/src/config/ads';
 import { todayKey, useSettingsStore } from '@/src/store/settingsStore';
 
 /**
- * AdMob controller. Every ad rule (frequency caps, first-launch, child mode)
+ * AdMob controller. Every ad rule (frequency caps, family-safe requests)
  * is enforced here so screens only ask "may I show an ad now?".
  *
  * Where the SDK is missing (web preview, Expo Go) no ads load. Rewarded ads
@@ -46,13 +44,8 @@ let rewardedLoaded = false;
 let rewardEarned = false;
 let pendingReward: ((earned: boolean) => void) | null = null;
 
-let appOpen: AppOpenAd | null = null;
-let appOpenLoadedAt = 0;
-let coldStartUntil = 0;
-
 let fullscreenShowing = false;
 let lastFullscreenClosedAt = 0;
-let appState: AppStateStatus = AppState.currentState;
 
 const stats = () => useSettingsStore.getState().ads;
 const patch = (p: Parameters<ReturnType<typeof useSettingsStore.getState>['patchAds']>[0]) =>
@@ -64,7 +57,6 @@ function unitId(kind: AdKind): string {
     const test = {
       banner: sdk.TestIds.ADAPTIVE_BANNER,
       interstitial: sdk.TestIds.INTERSTITIAL,
-      appOpen: sdk.TestIds.APP_OPEN,
       rewarded: sdk.TestIds.REWARDED,
     };
     return test[kind];
@@ -204,95 +196,33 @@ export function showRewarded(): Promise<boolean> {
   });
 }
 
-// ---------- App open ----------
-function loadAppOpen() {
-  if (!sdk) return;
-  const { AppOpenAd: Ad, AdEventType } = sdk;
-  const ad = Ad.createForAdRequest(unitId('appOpen'), requestOptions);
-  appOpenLoadedAt = 0;
-  ad.addAdEventListener(AdEventType.LOADED, () => {
-    appOpenLoadedAt = Date.now();
-    if (Date.now() < coldStartUntil) maybeShowAppOpen();
-  });
-  ad.addAdEventListener(AdEventType.CLOSED, () => {
-    onFullscreenClosed();
-    loadAppOpen();
-  });
-  ad.addAdEventListener(AdEventType.ERROR, (err) => {
-    console.warn('[ads] app open error', err);
-    if (fullscreenShowing) onFullscreenClosed();
-    retry(loadAppOpen);
-  });
-  appOpen = ad;
-  ad.load();
-}
-
-function maybeShowAppOpen(): boolean {
-  const now = Date.now();
-  if (!appOpen || !appOpenLoadedAt || fullscreenShowing) return false;
-  if (useSettingsStore.getState().launches <= 1) return false;
-  if (now - stats().lastAppOpenAt < AD_RULES.appOpenMinGapMs) return false;
-  if (now - lastFullscreenClosedAt < AD_RULES.afterFullscreenQuietMs) return false;
-  if (now - appOpenLoadedAt > AD_RULES.appOpenMaxAgeMs) {
-    loadAppOpen();
-    return false;
-  }
-  fullscreenShowing = true;
-  appOpenLoadedAt = 0;
-  coldStartUntil = 0;
-  patch({ lastAppOpenAt: now });
-  appOpen.show().catch((err: unknown) => {
-    console.warn('[ads] app open show failed', err);
-    onFullscreenClosed();
-    loadAppOpen();
-  });
-  return true;
-}
-
 // ---------- Setup ----------
 /**
- * Configures child-directed settings, gathers consent (adults), then
- * initializes AdMob and preloads full-screen ads. Safe to call repeatedly.
+ * The game is for everyone, so every request is family-safe: child-directed,
+ * under-age-of-consent, G-rated and non-personalized (no consent form needed).
+ * Then initializes AdMob and preloads full-screen ads. Safe to call twice.
  */
-export async function initAds(child: boolean): Promise<void> {
+export async function initAds(): Promise<void> {
   if (started) return;
   started = true;
   if (!sdk) {
     useAdStatus.setState({ rewardedReady: true });
     return;
   }
-  const { default: mobileAds, MaxAdContentRating, AdsConsent } = sdk;
+  const { default: mobileAds, MaxAdContentRating } = sdk;
   try {
     await mobileAds().setRequestConfiguration({
-      maxAdContentRating: child ? MaxAdContentRating.G : MaxAdContentRating.PG,
-      tagForChildDirectedTreatment: child,
-      tagForUnderAgeOfConsent: child,
+      maxAdContentRating: MaxAdContentRating.G,
+      tagForChildDirectedTreatment: true,
+      tagForUnderAgeOfConsent: true,
     });
-    if (child) {
-      requestOptions = { requestNonPersonalizedAdsOnly: true };
-    } else {
-      let canRequest = true;
-      try {
-        const info = await AdsConsent.gatherConsent();
-        canRequest = info.canRequestAds;
-      } catch (err) {
-        console.warn('[ads] consent form failed', err);
-        const info = await AdsConsent.getConsentInfo().catch(() => null);
-        canRequest = info ? info.canRequestAds : true;
-      }
-      if (!canRequest) return;
-    }
+    requestOptions = { requestNonPersonalizedAdsOnly: true };
     await mobileAds().initialize();
     useAdStatus.setState({ ready: true });
-    coldStartUntil = Date.now() + AD_RULES.appOpenColdStartWindowMs;
+    // No app-open ads: Google Play Families policy forbids full-screen ads
+    // at app launch, and every player gets family-safe ads.
     loadInterstitial();
     loadRewarded();
-    loadAppOpen();
-    AppState.addEventListener('change', (next) => {
-      const cameBack = appState === 'background' && next === 'active';
-      appState = next;
-      if (cameBack) maybeShowAppOpen();
-    });
   } catch (err) {
     console.warn('[ads] init failed', err);
   }

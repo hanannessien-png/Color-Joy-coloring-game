@@ -43,10 +43,26 @@ const colors = {
     shadow: '#C9A97A',
     gold: '#FFB800',
     locked: '#D8D0C4',
-    /** Unfilled regions that match the selected number. */
-    highlight: '#D9D2EA',
-    /** Number labels on unfilled regions. */
-    label: '#6E6880',
+    /** Hint target: the part a hint points at. */
+    hintGlow: '#FFE45C',
+    /** Pencil materials. */
+    wood: '#F3CD95',
+    woodShade: '#D9A566',
+    metal: '#CBD2DC',
+    eraser: '#FF9DB6',
+    paperWrap: '#FFF4E0',
+    /** Pencil tray (wooden box). */
+    tray: '#8A5A3B',
+    trayInner: '#6E4329',
+    trayEdge: '#B57A4F',
+    heart: '#FF3D6E',
+    /** Premium accents: deep plum backdrop and warm gold. */
+    plum: '#2B1E45',
+    plumSoft: '#463367',
+    goldDeep: '#E59400',
+    goldSoft: '#FFF1C2',
+    glass: 'rgba(255,255,255,0.35)',
+    scrim: 'rgba(43,30,69,0.62)',
     /** Soft background for the mistakes badge once a mistake happened. */
     errorSoft: '#FFE3E3',
     /** Floating paint blobs on the title screen. */

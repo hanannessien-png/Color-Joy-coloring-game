@@ -1,7 +1,9 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useMemo } from 'react';
 import { Platform, Pressable, StyleSheet, Text, useWindowDimensions, View } from 'react-native';
 import { router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Image } from 'expo-image';
+import { LinearGradient } from 'expo-linear-gradient';
 import Animated, {
   Easing,
   useAnimatedStyle,
@@ -17,94 +19,88 @@ import * as Haptics from 'expo-haptics';
 
 import { useColors } from '@/hooks/useColors';
 import { fonts } from '@/constants/fonts';
-import { TargetArt } from '@/src/components/ArtSvg';
 import { CoinChip } from '@/src/components/CoinChip';
-import { IMAGE_BY_ID } from '@/src/data/images';
 import { LEVELS } from '@/src/data/levels';
-import { currentLevelIndex, useGameStore } from '@/src/store/gameStore';
+import { currentLevelIndex, totalStars, useGameStore } from '@/src/store/gameStore';
+import { seededRandom } from '@/src/utils/color';
 
-const HERO_IMAGE = IMAGE_BY_ID['nature-sunflower'];
+const hero = require('@/assets/images/hero-pencils.png');
 
-/** A soft paint blob that drifts up and down forever. */
-function Blob({
-  color,
-  size,
-  top,
-  left,
-  delay,
-}: {
-  color: string;
-  size: number;
-  top: number;
-  left: number;
-  delay: number;
-}) {
+/** A tiny twinkling star in the backdrop. */
+function Sparkle({ x, y, size, delay }: { x: number; y: number; size: number; delay: number }) {
+  const c = useColors();
   const t = useSharedValue(0);
   useEffect(() => {
     t.value = withDelay(
       delay,
-      withRepeat(withTiming(1, { duration: 2600, easing: Easing.inOut(Easing.sin) }), -1, true),
+      withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }), -1, true),
     );
   }, [t, delay]);
   const style = useAnimatedStyle(() => ({
-    transform: [{ translateY: -14 * t.value }, { scale: 1 + 0.06 * t.value }],
+    opacity: 0.25 + 0.75 * t.value,
+    transform: [{ scale: 0.6 + 0.4 * t.value }],
   }));
   return (
-    <Animated.View
-      pointerEvents="none"
-      style={[
-        styles.blob,
-        { width: size, height: size, borderRadius: size / 2, backgroundColor: color, top, left },
-        style,
-      ]}
-    />
+    <Animated.View pointerEvents="none" style={[styles.sparkle, { left: x, top: y }, style]}>
+      <MaterialCommunityIcons name="star-four-points" size={size} color={c.goldSoft} />
+    </Animated.View>
   );
 }
 
-function BigButton({
+function MenuButton({
   label,
   sub,
   icon,
-  color,
+  gradient,
   textColor,
   onPress,
   testID,
+  big,
 }: {
   label: string;
   sub?: string;
   icon: keyof typeof MaterialCommunityIcons.glyphMap;
-  color: string;
+  gradient: [string, string];
   textColor: string;
   onPress: () => void;
   testID: string;
+  big?: boolean;
 }) {
   const c = useColors();
   return (
     <Pressable
       testID={testID}
+      accessibilityRole="button"
+      accessibilityLabel={label}
       onPress={() => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium).catch(() => {});
         onPress();
       }}
       style={({ pressed }) => [
-        styles.bigBtn,
+        styles.menuShadow,
         {
-          backgroundColor: color,
-          borderColor: c.ink,
-          shadowColor: c.ink,
+          backgroundColor: c.ink,
           transform: [{ translateY: pressed ? 4 : 0 }],
-          shadowOffset: { width: 0, height: pressed ? 1 : 5 },
+          marginBottom: pressed ? 0 : 4,
         },
       ]}
     >
-      <View style={[styles.bigIcon, { backgroundColor: 'rgba(255,255,255,0.3)' }]}>
-        <MaterialCommunityIcons name={icon} size={30} color={textColor} />
-      </View>
-      <View style={{ flex: 1 }}>
-        <Text style={[styles.bigLabel, { color: textColor }]}>{label}</Text>
-        {sub ? <Text style={[styles.bigSub, { color: textColor }]}>{sub}</Text> : null}
-      </View>
-      <MaterialCommunityIcons name="chevron-right" size={30} color={textColor} />
+      <LinearGradient
+        colors={gradient}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
+        style={[styles.menuBtn, { height: big ? 84 : 66, borderColor: c.ink }]}
+      >
+        <View style={[styles.menuShine, { backgroundColor: c.paper }]} />
+        <View style={[styles.menuIcon, { width: big ? 52 : 42, height: big ? 52 : 42, backgroundColor: c.glass }]}>
+          <MaterialCommunityIcons name={icon} size={big ? 32 : 24} color={textColor} />
+        </View>
+        <View style={{ flex: 1 }}>
+          <Text style={[styles.menuLabel, { color: textColor, fontSize: big ? 28 : 20 }]}>{label}</Text>
+          {sub ? <Text style={[styles.menuSub, { color: textColor }]}>{sub}</Text> : null}
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={big ? 32 : 26} color={textColor} />
+      </LinearGradient>
     </Pressable>
   );
 }
@@ -116,88 +112,125 @@ export default function TitleScreen() {
   const stars = useGameStore((s) => s.stars);
   const levelIdx = currentLevelIndex(stars);
   const allDone = LEVELS.every((l) => stars[l.id]);
-  const totalStars = Object.values(stars).reduce((a, b) => a + b, 0);
+  const starCount = totalStars(stars);
 
   const topPad = Platform.OS === 'web' ? 67 : insets.top;
   const bottomPad = Platform.OS === 'web' ? 34 : insets.bottom;
   const w = Math.min(width, 520);
-  const heroSize = Math.min(w * 0.58, height * 0.3, 260);
+  const heroSize = Math.min(w * 0.82, height * 0.36, 360);
 
-  // Entrance: logo drops in, hero card bobs gently.
+  const sparkles = useMemo(() => {
+    const rand = seededRandom(11);
+    return Array.from({ length: 14 }, (_, i) => ({
+      key: i,
+      x: rand() * width,
+      y: rand() * height * 0.6,
+      size: 8 + rand() * 12,
+      delay: rand() * 1600,
+    }));
+  }, [width, height]);
+
+  // Entrance: logo drops in; the pencil box floats gently.
   const drop = useSharedValue(0);
   const bob = useSharedValue(0);
   useEffect(() => {
     drop.value = withSpring(1, { damping: 11, stiffness: 120 });
     bob.value = withRepeat(
       withSequence(
-        withTiming(1, { duration: 1800, easing: Easing.inOut(Easing.quad) }),
-        withTiming(0, { duration: 1800, easing: Easing.inOut(Easing.quad) }),
+        withTiming(1, { duration: 2000, easing: Easing.inOut(Easing.quad) }),
+        withTiming(0, { duration: 2000, easing: Easing.inOut(Easing.quad) }),
       ),
       -1,
     );
   }, [drop, bob]);
   const titleStyle = useAnimatedStyle(() => ({
     opacity: drop.value,
-    transform: [{ translateY: (1 - drop.value) * -40 }, { scale: 0.8 + 0.2 * drop.value }],
+    transform: [{ translateY: (1 - drop.value) * -40 }, { scale: 0.85 + 0.15 * drop.value }],
   }));
   const heroStyle = useAnimatedStyle(() => ({
-    transform: [{ translateY: -8 * bob.value }, { rotate: `${-6 + 4 * bob.value}deg` }],
+    transform: [{ translateY: -10 * bob.value }, { rotate: `${-2 + 4 * bob.value}deg` }],
+  }));
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: 0.35 + 0.25 * bob.value,
+    transform: [{ scale: 0.95 + 0.1 * bob.value }],
   }));
 
   return (
-    <View style={[styles.root, { backgroundColor: c.background }]}>
-      <Blob color={c.blobPink} size={170} top={-40} left={-60} delay={0} />
-      <Blob color={c.blobMint} size={130} top={height * 0.3} left={width - 80} delay={400} />
-      <Blob color={c.blobSun} size={110} top={height * 0.62} left={-40} delay={800} />
-      <Blob color={c.blobLilac} size={90} top={90} left={width - 120} delay={1200} />
+    <View style={styles.root}>
+      <LinearGradient
+        colors={[c.plum, c.plumSoft, c.plum]}
+        locations={[0, 0.55, 1]}
+        style={StyleSheet.absoluteFill}
+      />
+      {sparkles.map(({ key, ...s }) => (
+        <Sparkle key={key} {...s} />
+      ))}
 
-      <View style={[styles.content, { paddingTop: topPad + 6, paddingBottom: bottomPad + 18, width: w }]}>
+      <View style={[styles.content, { paddingTop: topPad + 8, paddingBottom: bottomPad + 16, width: w }]}>
         <View style={styles.topRow}>
-          <View style={[styles.starChip, { backgroundColor: c.paper, borderColor: c.ink }]}>
-            <MaterialCommunityIcons name="star" size={20} color={c.gold} />
-            <Text style={[styles.starText, { color: c.ink }]}>{totalStars}</Text>
+          <View testID="star-total" style={[styles.chip, { backgroundColor: c.paper, borderColor: c.ink }]}>
+            <MaterialCommunityIcons name="star" size={22} color={c.gold} />
+            <Text style={[styles.chipText, { color: c.ink }]}>{starCount}</Text>
           </View>
-          <CoinChip />
+          <View style={styles.topRight}>
+            <Pressable
+              testID="title-store"
+              accessibilityLabel="Shop"
+              onPress={() => router.push('/store')}
+              style={({ pressed }) => [
+                styles.chip,
+                { backgroundColor: c.gold, borderColor: c.ink, transform: [{ scale: pressed ? 0.94 : 1 }] },
+              ]}
+            >
+              <MaterialCommunityIcons name="storefront" size={20} color={c.ink} />
+              <Text style={[styles.chipText, { color: c.ink }]}>Shop</Text>
+            </Pressable>
+            <CoinChip />
+          </View>
         </View>
 
         <Animated.View style={[styles.titleWrap, titleStyle]}>
-          <Text style={[styles.title, { color: c.ink }]}>
-            <Text style={{ color: c.primary }}>Color</Text> <Text style={{ color: c.accent }}>Joy</Text>
-          </Text>
-          <Text style={[styles.tagline, { color: c.mutedForeground }]}>Tap, color, relax</Text>
+          <Text style={[styles.title, styles.titleShadow, { color: c.ink }]}>Color Joy</Text>
+          <Text style={[styles.title, styles.titleFront, { color: c.goldSoft }]}>Color Joy</Text>
+          <Text style={[styles.tagline, { color: c.goldSoft }]}>Match the colors, fill the joy</Text>
         </Animated.View>
 
         <View style={styles.heroArea}>
           <Animated.View
+            pointerEvents="none"
             style={[
-              styles.heroCard,
-              { backgroundColor: c.paper, borderColor: c.ink, shadowColor: c.ink },
-              heroStyle,
+              styles.glow,
+              { width: heroSize, height: heroSize, borderRadius: heroSize / 2, backgroundColor: c.violet },
+              glowStyle,
             ]}
-          >
-            <TargetArt image={HERO_IMAGE} size={heroSize} strokeWidth={5} />
+          />
+          <Animated.View style={heroStyle}>
+            <Image
+              source={hero}
+              style={{ width: heroSize, height: heroSize }}
+              contentFit="contain"
+              accessibilityLabel="A box of colored pencils"
+            />
           </Animated.View>
-          <View style={[styles.brush, { backgroundColor: c.sun, borderColor: c.ink }]}>
-            <MaterialCommunityIcons name="brush" size={30} color={c.ink} />
-          </View>
         </View>
 
         <View style={styles.buttons}>
-          <BigButton
+          <MenuButton
             testID="play"
+            big
             label="Play"
-            sub={allDone ? 'All levels done — replay any' : `Level ${levelIdx + 1}`}
+            sub={allDone ? 'All levels done · replay any' : `Level ${levelIdx + 1}`}
             icon="play"
-            color={c.primary}
-            textColor="#FFFFFF"
+            gradient={[c.primary, c.goldDeep]}
+            textColor={c.paper}
             onPress={() => router.push('/levels')}
           />
-          <BigButton
+          <MenuButton
             testID="free-coloring"
             label="Free Coloring"
             sub="Any color, any picture"
             icon="palette"
-            color={c.sun}
+            gradient={[c.goldSoft, c.gold]}
             textColor={c.ink}
             onPress={() => router.push('/gallery')}
           />
@@ -209,58 +242,52 @@ export default function TitleScreen() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, alignItems: 'center', overflow: 'hidden' },
-  blob: { position: 'absolute', opacity: 0.9 },
-  content: { flex: 1, paddingHorizontal: 20 },
+  sparkle: { position: 'absolute' },
+  content: { flex: 1, paddingHorizontal: 18 },
   topRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  starChip: {
+  topRight: { flexDirection: 'row', gap: 8, alignItems: 'center' },
+  chip: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 4,
+    gap: 5,
     height: 40,
     paddingHorizontal: 12,
     borderRadius: 20,
     borderWidth: 2,
   },
-  starText: { fontFamily: fonts.black, fontSize: 17 },
+  chipText: { fontFamily: fonts.black, fontSize: 16 },
   titleWrap: { alignItems: 'center', marginTop: 18 },
-  title: { fontFamily: fonts.black, fontSize: 52, letterSpacing: -1 },
-  tagline: { fontFamily: fonts.extrabold, fontSize: 16, marginTop: -4 },
+  title: { fontFamily: fonts.black, fontSize: 56, letterSpacing: -1 },
+  titleShadow: { position: 'absolute', top: 5 },
+  titleFront: {
+    textShadowColor: 'rgba(255,184,0,0.55)',
+    textShadowOffset: { width: 0, height: 0 },
+    textShadowRadius: 18,
+  },
+  tagline: { fontFamily: fonts.extrabold, fontSize: 16, marginTop: -4, opacity: 0.9 },
   heroArea: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  heroCard: {
-    padding: 10,
-    borderRadius: 28,
-    borderWidth: 3,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
-  },
-  brush: {
-    position: 'absolute',
-    right: '14%',
-    bottom: '12%',
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    borderWidth: 3,
-    alignItems: 'center',
-    justifyContent: 'center',
-    transform: [{ rotate: '12deg' }],
-  },
-  buttons: { gap: 14 },
-  bigBtn: {
+  glow: { position: 'absolute' },
+  buttons: { gap: 12 },
+  menuShadow: { borderRadius: 28 },
+  menuBtn: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 14,
-    height: 82,
     paddingHorizontal: 16,
-    borderRadius: 26,
+    borderRadius: 28,
     borderWidth: 3,
-    shadowOpacity: 1,
-    shadowRadius: 0,
-    elevation: 4,
+    overflow: 'hidden',
   },
-  bigIcon: { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center' },
-  bigLabel: { fontFamily: fonts.black, fontSize: 24 },
-  bigSub: { fontFamily: fonts.bold, fontSize: 14, opacity: 0.9 },
+  menuShine: {
+    position: 'absolute',
+    top: 4,
+    left: 18,
+    right: 18,
+    height: 10,
+    borderRadius: 5,
+    opacity: 0.35,
+  },
+  menuIcon: { borderRadius: 26, alignItems: 'center', justifyContent: 'center' },
+  menuLabel: { fontFamily: fonts.black },
+  menuSub: { fontFamily: fonts.bold, fontSize: 14, opacity: 0.92 },
 });

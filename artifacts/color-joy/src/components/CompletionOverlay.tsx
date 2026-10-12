@@ -12,6 +12,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import { fonts } from '@/constants/fonts';
 import { ArtSvg } from '@/src/components/ArtSvg';
+import { Confetti } from '@/src/components/Confetti';
 import type { ColoringImage } from '@/src/types';
 
 interface Props {
@@ -87,7 +88,8 @@ export function CompletionOverlay({
   const showBonus = isLevel && !!onDoubleCoins && coinsEarned > 0;
 
   return (
-    <Animated.View style={[styles.overlay, bgStyle]}>
+    <Animated.View style={[styles.overlay, { backgroundColor: c.scrim }, bgStyle]}>
+      <Confetti />
       <Animated.View
         style={[styles.card, { backgroundColor: c.paper, borderColor: c.ink }, cardStyle]}
       >
@@ -105,15 +107,15 @@ export function CompletionOverlay({
         <Text style={[styles.title, { color: c.ink }]}>
           {isLevel ? (stars === 3 ? 'Perfect!' : 'Level complete!') : 'Masterpiece!'}
         </Text>
-        <View style={[styles.preview, { borderColor: c.border }]}>
-          <ArtSvg image={image} artKey={artKey} size={110} strokeWidth={6} />
+        <View style={[styles.preview, { borderColor: c.border, backgroundColor: c.paper }]}>
+          <ArtSvg image={image} artKey={artKey} size={150} strokeWidth={5.5} />
         </View>
         {isLevel ? (
           <View style={styles.statsRow}>
             <View style={[styles.stat, { backgroundColor: c.muted }]}>
-              <MaterialCommunityIcons name="close-circle-outline" size={18} color={c.ink} />
+              <MaterialCommunityIcons name="heart" size={18} color={c.heart} />
               <Text style={[styles.statText, { color: c.ink }]}>
-                {mistakes ?? 0} {mistakes === 1 ? 'mistake' : 'mistakes'}
+                {mistakes ? `${mistakes} ${mistakes === 1 ? 'mistake' : 'mistakes'}` : 'No mistakes'}
               </Text>
             </View>
             <View style={[styles.stat, { backgroundColor: c.secondary }]}>
@@ -195,7 +197,6 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(46,42,59,0.5)',
     alignItems: 'center',
     justifyContent: 'center',
     padding: 24,
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     marginTop: -50,
   },
   title: { fontFamily: fonts.black, fontSize: 28 },
-  preview: { borderWidth: 2, borderRadius: 18, overflow: 'hidden', backgroundColor: '#FFFFFF' },
+  preview: { borderWidth: 2, borderRadius: 18, overflow: 'hidden' },
   statsRow: { flexDirection: 'row', gap: 8 },
   stat: {
     flexDirection: 'row',

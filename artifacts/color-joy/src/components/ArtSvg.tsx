@@ -1,16 +1,16 @@
 import React, { memo } from 'react';
 import { Platform } from 'react-native';
-import Svg, { G, Path, Text as SvgText } from 'react-native-svg';
+import Svg, { G, Path } from 'react-native-svg';
 
 import colors from '@/constants/colors';
-import { fonts } from '@/constants/fonts';
 import { VIEWBOX } from '@/src/data/svgHelpers';
 import { fillToColor, useArtStore } from '@/src/store/artStore';
 import type { ColoringImage, Region } from '@/src/types';
 
 const INK = colors.light.ink;
-const HIGHLIGHT = colors.light.highlight;
-const LABEL = colors.light.label;
+const HIGHLIGHT = colors.light.hintGlow;
+const HINT_STROKE = colors.light.primary;
+const PAPER = colors.light.paper;
 const REGION_DOM_PREFIX = 'cj-region:';
 
 /** Web only: id of the tappable region under a screen point, if any. */
@@ -55,39 +55,14 @@ const RegionPath = memo(function RegionPath({
   return (
     <Path
       d={region.d}
-      fill={fill ? fillToColor(fill) : highlighted ? HIGHLIGHT : '#FFFFFF'}
-      stroke={INK}
-      strokeWidth={strokeWidth}
+      fill={fill ? fillToColor(fill) : highlighted ? HIGHLIGHT : PAPER}
+      stroke={highlighted && !fill ? HINT_STROKE : INK}
+      strokeWidth={highlighted && !fill ? strokeWidth * 1.8 : strokeWidth}
       strokeLinejoin="round"
       strokeLinecap="round"
       id={onPress && isWeb ? `${REGION_DOM_PREFIX}${region.id}` : undefined}
       onPress={onPress && !isWeb ? () => onPress(region.id) : undefined}
     />
-  );
-});
-
-/** Paint-by-number label; hidden once its region is filled. */
-const RegionLabel = memo(function RegionLabel({
-  artKey,
-  region,
-}: {
-  artKey: string;
-  region: Region;
-}) {
-  const filled = useArtStore((s) => !!s.fills[artKey]?.[region.id]);
-  if (filled) return null;
-  return (
-    <SvgText
-      x={region.l[0]}
-      y={region.l[1] + 5}
-      fontSize={14}
-      fontFamily={fonts.extrabold}
-      fontWeight="800"
-      fill={LABEL}
-      textAnchor="middle"
-    >
-      {String(region.n)}
-    </SvgText>
   );
 });
 
@@ -98,10 +73,8 @@ interface ArtSvgProps {
   artKey?: string;
   strokeWidth?: number;
   onRegionPress?: (regionId: string) => void;
-  /** Paint-by-number: show numbers on unfilled regions. */
-  showNumbers?: boolean;
-  /** Paint-by-number: unfilled regions with this number get highlighted. */
-  activeNumber?: number;
+  /** Hint: this unfilled part glows so the player can find it. */
+  hintRegionId?: string | null;
 }
 
 export const ArtSvg = memo(function ArtSvg({
@@ -110,8 +83,7 @@ export const ArtSvg = memo(function ArtSvg({
   artKey = image.id,
   strokeWidth = 4.5,
   onRegionPress,
-  showNumbers = false,
-  activeNumber,
+  hintRegionId,
 }: ArtSvgProps) {
   return (
     <Svg width={size} height={size} viewBox={`0 0 ${VIEWBOX} ${VIEWBOX}`}>
@@ -121,18 +93,11 @@ export const ArtSvg = memo(function ArtSvg({
           artKey={artKey}
           region={r}
           strokeWidth={strokeWidth}
-          highlighted={activeNumber === r.n}
+          highlighted={hintRegionId === r.id}
           onPress={onRegionPress}
         />
       ))}
       <Details image={image} strokeWidth={strokeWidth} />
-      {showNumbers ? (
-        <G pointerEvents="none">
-          {image.regions.map((r) => (
-            <RegionLabel key={r.id} artKey={artKey} region={r} />
-          ))}
-        </G>
-      ) : null}
     </Svg>
   );
 });
@@ -172,7 +137,7 @@ export const TargetArt = memo(function TargetArt({
         <Path
           key={r.id}
           d={r.d}
-          fill={image.palette[r.n - 1] ?? '#FFFFFF'}
+          fill={image.palette[r.n - 1] ?? PAPER}
           stroke={INK}
           strokeWidth={strokeWidth}
           strokeLinejoin="round"
