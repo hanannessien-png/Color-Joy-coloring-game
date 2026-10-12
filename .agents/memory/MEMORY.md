@@ -1,1 +1,2 @@
+- [Web SVG taps](web-svg-taps.md) — RNGH captures the pointer on web; SVG taps go through a Tap gesture + elementFromPoint, not onPress/onClick
 - [Color Joy decisions](color-joy-decisions.md) — confirmed scope: Android-only, age gate for ads, free brush, 20% locked images, web-preview testing, milestone stops
