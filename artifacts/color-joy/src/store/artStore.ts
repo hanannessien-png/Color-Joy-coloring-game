@@ -13,6 +13,7 @@ interface ArtState {
   /** fills[imageId][regionId] */
   fills: Record<string, Record<string, Fill>>;
   applyChanges: (imageId: string, changes: RegionChange[]) => void;
+  clear: (artKey: string) => void;
 }
 
 /** Saved coloring progress for every picture (auto-saved on the device). */
@@ -28,6 +29,12 @@ export const useArtStore = create<ArtState>()(
             else delete next[c.id];
           }
           return { fills: { ...state.fills, [imageId]: next } };
+        }),
+      clear: (artKey) =>
+        set((state) => {
+          const fills = { ...state.fills };
+          delete fills[artKey];
+          return { fills };
         }),
     }),
     {

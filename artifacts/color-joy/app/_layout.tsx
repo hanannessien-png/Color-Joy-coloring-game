@@ -31,6 +31,8 @@ function RootLayoutNav() {
       }}
     >
       <Stack.Screen name="index" />
+      <Stack.Screen name="levels" options={{ animation: 'slide_from_right' }} />
+      <Stack.Screen name="gallery" options={{ animation: 'slide_from_right' }} />
       <Stack.Screen name="color/[id]" options={{ animation: 'slide_from_right' }} />
     </Stack>
   );

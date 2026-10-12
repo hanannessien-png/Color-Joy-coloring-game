@@ -41,6 +41,12 @@ const colors = {
     ink: '#2E2A3B',
     paper: '#FFFFFF',
     shadow: '#C9A97A',
+    gold: '#FFB800',
+    locked: '#D8D0C4',
+    /** Unfilled regions that match the selected number. */
+    highlight: '#D9D2EA',
+    /** Number labels on unfilled regions. */
+    label: '#6E6880',
   },
 
   radius: 20,
