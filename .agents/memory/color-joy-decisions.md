@@ -6,7 +6,7 @@ description: User-confirmed scope and settings for the Color Joy coloring game (
 Decisions confirmed by the user on 2026-10-12, before milestone 1:
 
 - Platform: Android only (do not plan iOS work).
-- Package id: com.colorjoy.app (user said they don't care, agent picked it).
+- Package id: com.joypencils.colorjoy (2026-10-16). The first id, com.colorjoy.app, was already taken on Google Play; the user asked for a different one and the agent picked this.
 - Ads/kids: neutral age gate on first launch. Under 13 → child-directed treatment, G rating, no personalized ads; adults → normal UMP consent.
 - Free brush: always free over the whole image (not clipped to regions).
 - No "remove ads" in-app purchase.

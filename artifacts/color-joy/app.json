@@ -12,7 +12,7 @@
       "supportsTablet": false
     },
     "android": {
-      "package": "com.colorjoy.app",
+      "package": "com.joypencils.colorjoy",
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/icon.png",
         "backgroundColor": "#FFF7EC"
